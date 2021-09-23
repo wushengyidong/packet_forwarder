@@ -274,7 +274,7 @@ static int parse_SX1301_configuration(const char * conf_file) {
     int i;
     char param_name[32]; /* used to generate variable parameter names */
     const char *str; /* used to store string value from JSON object */
-    const char conf_obj_name[] = "SX1301_conf";
+    const char conf_obj_name[] = "SX1308_conf";
     JSON_Value *root_val = NULL;
     JSON_Object *conf_obj = NULL;
     JSON_Object *conf_lbt_obj = NULL;
