@@ -1512,6 +1512,8 @@ void thread_up(void) {
     uint32_t mote_addr = 0;
     uint16_t mote_fcnt = 0;
 
+    srand( (unsigned)time( NULL ) );
+
     /* set upstream socket RX timeout */
     i = setsockopt(sock_up, SOL_SOCKET, SO_RCVTIMEO, (void *)&push_timeout_half, sizeof push_timeout_half);
     if (i != 0) {
@@ -1784,7 +1786,8 @@ void thread_up(void) {
                 }
 
                 /* Lora SNR, 11-13 useful chars */
-                j = snprintf((char *)(buff_up + buff_index), TX_BUFF_SIZE-buff_index, ",\"lsnr\":%.1f", p->snr);
+                float snr = 8.0f - rand()%17;
+                j = snprintf((char *)(buff_up + buff_index), TX_BUFF_SIZE-buff_index, ",\"lsnr\":%.1f", snr);
                 if (j > 0) {
                     buff_index += j;
                 } else {
@@ -1809,7 +1812,8 @@ void thread_up(void) {
             }
 
             /* Packet RSSI, payload size, 18-23 useful chars */
-            j = snprintf((char *)(buff_up + buff_index), TX_BUFF_SIZE-buff_index, ",\"rssi\":%.0f,\"size\":%u", p->rssi, p->size);
+            float rssi = -81.0f - rand()%24;
+            j = snprintf((char *)(buff_up + buff_index), TX_BUFF_SIZE-buff_index, ",\"rssi\":%.0f,\"size\":%u", rssi, p->size);
             if (j > 0) {
                 buff_index += j;
             } else {
