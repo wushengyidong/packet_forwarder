@@ -66,7 +66,7 @@ Maintainer: Michael Coracin
 
 /* -------------------------------------------------------------------------- */
 /* --- PRIVATE CONSTANTS ---------------------------------------------------- */
-
+#define VERSION_STRING "4.0.1"
 #ifndef VERSION_STRING
   #define VERSION_STRING "undefined"
 #endif
