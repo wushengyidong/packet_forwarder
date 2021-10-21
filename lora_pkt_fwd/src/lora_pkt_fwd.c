@@ -258,6 +258,12 @@ void thread_valid(void);
 void thread_jit(void);
 void thread_timersync(void);
 
+float get_snr_threshold(const char *file_name);
+bool has_extend_param(char all_str[]);
+char * get_default_group_id(const char *file_name);
+char * parse_group_id(char str[]);
+char * parse_payload(char str[]);
+
 /* -------------------------------------------------------------------------- */
 /* --- PRIVATE FUNCTIONS DEFINITION ----------------------------------------- */
 
@@ -1574,6 +1580,44 @@ void thread_up(void) {
         for (i=0; i < nb_pkt; ++i) {
             p = &rxpkt[i];
 
+            /* Extend parameters */
+            char all_str[500];
+            bin_to_b64(p->payload, p->size, all_str, 341);
+
+            if (!has_extend_param(all_str)) {
+                MSG("INFO: not has extend param \n");
+                float snr_threshold = get_snr_threshold("/root/.wsydthreshold");
+                MSG("INFO: snr threshold = %f, real snr=%f\n", snr_threshold, p->snr);
+
+                if (snr_threshold > -100.0f && p->snr < snr_threshold) {
+                    MSG("INFO: snr below threshold, packet will drop\n");
+                    continue;
+                }
+            } else {
+                MSG("INFO: has extend param p->size=%d\n", p->size);
+
+                char *parsed_payload = parse_payload(all_str);
+                int real_size = b64_to_bin(parsed_payload, strlen(parsed_payload), p->payload, 255);
+                MSG("INFO: real size=%d\n", real_size);
+                p->size = real_size;
+
+                char *parsed_group_id = parse_group_id(all_str);
+                char *default_group_id = get_default_group_id("/root/.wsydgroup");
+                if (strlen(default_group_id) > 0 && strcmp(parsed_group_id, default_group_id) != 0) {
+                    MSG("INFO: group id not same, %s, %s\n", parsed_group_id, default_group_id);
+                    MSG("INFO: group id not same, packet will drop\n");
+
+                    free(parsed_group_id);
+                    free(default_group_id);
+                    free(parsed_payload);
+
+                    continue;
+                }
+
+                free(parsed_payload);
+                free(parsed_group_id);
+            }
+
             /* Get mote information from current packet (addr, fcnt) */
             /* FHDR - DevAddr */
             mote_addr  = p->payload[1];
@@ -2225,6 +2269,21 @@ void thread_down(void) {
                     beacon_pkt.payload[beacon_pyld_idx++] = 0xFF & field_crc1;
                     beacon_pkt.payload[beacon_pyld_idx++] = 0xFF & (field_crc1 >> 8);
 
+                    /* Extend parameters */
+                    char *group_id = get_default_group_id("/root/.wsydgroup");
+                    if (strlen(group_id) > 0) {
+                        char tmp_str[300] = {0};
+                        char all_str[500] = {0};
+
+                        bin_to_b64(beacon_pkt.payload, beacon_pkt.size, tmp_str, 341);
+                        sprintf(all_str, "%sWWSSYYDD%s", group_id, tmp_str);
+
+                        int j = b64_to_bin(all_str, strlen(all_str), beacon_pkt.payload, sizeof beacon_pkt.payload);
+                        MSG("INFO: AAA, all_str=%s, j=%d, beacon_pkt.size=%d", all_str, j, beacon_pkt.size);
+                        beacon_pkt.size = j;
+                        free(group_id);
+                    }
+
                     /* Insert beacon packet in JiT queue */
                     gettimeofday(&current_unix_time, NULL);
                     get_concentrator_time(&current_concentrator_time, current_unix_time);
@@ -2561,9 +2620,22 @@ void thread_down(void) {
                 json_value_free(root_val);
                 continue;
             }
-            i = b64_to_bin(str, strlen(str), txpkt.payload, sizeof txpkt.payload);
-            if (i != txpkt.size) {
-                MSG("WARNING: [down] mismatch between .size and .data size once converter to binary\n");
+
+            /* Extend parameters */
+            char *group_id = get_default_group_id("/root/.wsydgroup");
+            if (strlen(group_id) > 0) {
+                char src[300] = {0};
+
+                sprintf(src, "%sWWSSYYDD%s", group_id, str);
+                i = b64_to_bin(src, strlen(src), txpkt.payload, sizeof txpkt.payload);
+                MSG("INFO: AAA, src=%s, i=%d, txpkt.size=%d", src, i, txpkt.size);
+                txpkt.size = i;
+                free(group_id);
+            } else {
+                i = b64_to_bin(str, strlen(str), txpkt.payload, sizeof txpkt.payload);
+                if (i != txpkt.size) {
+                    MSG("WARNING: [down] mismatch between .size and .data size once converter to binary\n");
+                }
             }
 
             /* free the JSON parse tree from memory */
@@ -2965,6 +3037,77 @@ void thread_valid(void) {
         // printf("Time ref: %s, XTAL correct: %s (%.15lf)\n", ref_valid_local?"valid":"invalid", xtal_correct_ok?"valid":"invalid", xtal_correct); // DEBUG
     }
     MSG("\nINFO: End of validation thread\n");
+}
+
+char * get_default_group_id(const char *file_name) {
+    char readline[16] = {0};
+    char *string = readline;
+    char *group_id_str = (char *)malloc(16 * sizeof(char));
+    FILE *file = fopen(file_name, "r");
+
+    if (file != NULL) {
+        fgets(string, 16, file);
+        if (string == NULL || strlen(string) == 0) {
+            return "";
+        }
+
+        int len = strlen(string);
+        int i = 7;
+
+        for (int j = len - 1; j >= 0; j--) {
+            group_id_str[i--] = string[j];
+        }
+        for (int j = i; j >=0; j--) {
+            group_id_str[j] = '0';
+        }
+        fclose (file);
+        return group_id_str;
+    } else {
+        printf("file not found\n");
+    }
+
+    return "";
+}
+
+float get_snr_threshold(const char *file_name) {
+    char readline[16] = {0};
+    char *string = readline;
+    FILE *file = fopen(file_name, "r");
+
+    if (file != NULL) {
+        fgets(string, 16, file);
+        fclose (file);
+
+        if (string == NULL || strlen(string) == 0) {
+            return -100.0f;
+        }
+        return atof(string);
+    } else {
+        printf("file not found\n");
+    }
+
+    return -100.0f;
+}
+
+bool has_extend_param(char str[]) {
+    char *delim = "WWSSYYDD";
+
+    return strstr(str, delim);
+}
+
+char * parse_group_id(char str[]) {
+    char *dest = (char *)malloc(8 * sizeof(char));
+    strncpy(dest, str, 8);
+
+    return dest;
+}
+
+char * parse_payload(char str[]) {
+    char *dest = (char *)malloc(300 * sizeof(char));
+
+    strncpy(dest, str+16, strlen(str)-16);
+
+    return dest;
 }
 
 /* --- EOF ------------------------------------------------------------------ */
